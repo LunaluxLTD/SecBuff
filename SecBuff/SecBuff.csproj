@@ -1,0 +1,45 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFrameworks>
+            net8.0-windows;
+            net9.0-windows;
+            net10.0-windows;
+            net8.0;
+            net9.0;
+            net10.0
+        </TargetFrameworks>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+        <PackageId>Lunalux.SecBuff</PackageId>
+        <Title>Secure Buffer</Title>
+        <Version>1.0.0-preview1</Version>
+        <Authors>Ata İlhan Köktürk</Authors>
+        <Company>LunaluxLTD</Company>
+        <Description>GC-safe, OS-level protected secure &amp; hardened memory library for .NET</Description>
+        <PackageTags>security;memory;mlock;mprotect;VirtualLock;VirtualProtect;safe-buffer;linux;windows;macos;cryptography;POSIX;secure</PackageTags>
+
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <RepositoryUrl>https://github.com/LunaluxLTD/SecBuff</RepositoryUrl>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <AnalysisMode>All</AnalysisMode>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="SecBuff.Tests" />
+        <None Include="../README.md" Pack="true" PackagePath="\" />
+        <None Include="../LICENSE.txt" Pack="true" PackagePath="\" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.5" />
+    </ItemGroup>
+</Project>

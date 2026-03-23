@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SecBuff", "SecBuff\SecBuff.csproj", "{7685C425-839C-4431-B68E-7D9490AD0FBE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SecBuff.Tests", "SecBuff.Tests\SecBuff.Tests.csproj", "{823FC896-F389-466E-BD8B-4FFEBE64D3E5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7685C425-839C-4431-B68E-7D9490AD0FBE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7685C425-839C-4431-B68E-7D9490AD0FBE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7685C425-839C-4431-B68E-7D9490AD0FBE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7685C425-839C-4431-B68E-7D9490AD0FBE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{823FC896-F389-466E-BD8B-4FFEBE64D3E5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{823FC896-F389-466E-BD8B-4FFEBE64D3E5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{823FC896-F389-466E-BD8B-4FFEBE64D3E5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{823FC896-F389-466E-BD8B-4FFEBE64D3E5}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
