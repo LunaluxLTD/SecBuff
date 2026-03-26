@@ -41,6 +41,7 @@ jobs:
     needs: test
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       id-token: write
     steps:
