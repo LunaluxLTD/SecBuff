@@ -2,7 +2,7 @@ name: Lunalux.SecBuff CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, test]
     tags: ["v*"]
   pull_request:
     branches: [main]

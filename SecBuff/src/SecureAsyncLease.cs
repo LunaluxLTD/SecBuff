@@ -2,8 +2,8 @@
 @author: atailh4n
 SecureAsyncLease.cs (c) 2026
 @description: A struct-based lease designed for asynchronous contexts.
-@created:  2026-03-23T16:21:56.122Z
-Modified: !date!
+@created:  2026-03-23
+Modified: 2026-04-29
 */
 
 using System.Runtime.CompilerServices;

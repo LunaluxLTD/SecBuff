@@ -6,6 +6,7 @@ _Hardened Memory Management for .NET, Time-bound memory exposure model. Aligned 
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/LunaluxLTD/SecBuff/pipeline.yml?style=for-the-badge)
 ![NuGet Version](https://img.shields.io/nuget/v/Lunalux.SecBuff?style=for-the-badge)
 ![NuGet Downloads](https://img.shields.io/nuget/dt/Lunalux.SecBuff?style=for-the-badge)
+[![CodeFactor](https://www.codefactor.io/repository/github/lunaluxltd/secbuff/badge?style=for-the-badge)](https://www.codefactor.io/repository/github/lunaluxltd/secbuff)
 
 ## Overview
 
@@ -19,7 +20,7 @@ By default, .NET types such as `string` and `byte[]` are managed by the garbage 
 
 **SecBuff** mitigates these risks by operating outside the managed heap and leveraging operating system–level memory protection mechanisms. Guarantees depend on the underlying operating system.
 
-The library is designed to support secure memory handling practices aligned with standards such as **ISO/IEC 27001**, attempts to reduce the likelihood of **sensitive data leaving physical memory**.
+The library is designed to support secure memory handling practices aligned with standards such as **ISO/IEC 27001**, reduces the likelihood of sensitive data being persisted outside physical memory, subject to OS guarantees.
 
 ## Key Features
 
@@ -65,35 +66,60 @@ Supports safe usage across `async` / `await` boundaries. Due to .NET runtime con
 1. **Secure Input**\
    Read sensitive input directly into protected memory **without creating intermediate managed** `string`**s**:
 
-```cs
-using SecBuff;
-using ISecureBuffer password =
-    SecureConsole.ReadSecret("Enter admin password", useMprotect: true);
-```
-
+   ```cs
+   using SecBuff;
+   using ISecureBuffer password = 
+       SecureConsole.ReadSecret("Enter admin password", useMprotect: true);
+   ```
+  
 2. **Secret Management**\
    Store and access secrets using a controlled access pattern:
 
-```cs
-var vault = new SecretManager<string>(logger);
+   ```cs
+   var vault = new SecretManager<string>(logger);
+   
+   // Store a secret - System.Text.Encoding is not recommended due to GC can copy these strings.
+   vault.Set("ApiKey", Encoding.UTF8.GetBytes("super-secret-key"), useMprotect: true);
+   
+   // Access the secret
+   vault.AccessSecret("ApiKey", span =>
+   {
+       MyApiClient.Initialize(span);
+   });
+   ```
 
-// Store a secret - System.Text.Encoding is not recommended due to GC can copy these strings.
-vault.Set("ApiKey", Encoding.UTF8.GetBytes("super-secret-key"), useMprotect: true);
+   Memory is only readable and writable within the access delegate and is **protected immediately** afterward through reference-counted access control.
+  
+3. **Encrypted Key Files (.sbkf)**  
+   Persist and reuse cryptographic keys securely across application runs:
 
-// Access the secret
-vault.AccessSecret("ApiKey", span =>
-{
-    MyApiClient.Initialize(span);
-});
-```
+   ```cs
+   // Generate or load a key file
+   var keyFile = SecureKeyFile.Load("master.sbkf");
+   
+   // Initialize vault with encryption support
+   var vault = new SecretManager<string>(logger, keyFile);
+   
+   // Store encrypted secret
+   vault.SetSecret("ApiKey", "super-secret-key"u8.ToArray(), useEncryption: true);
+   
+   // Access (automatically decrypted in a protected buffer)
+   vault.AccessSecret("ApiKey", span =>
+   {
+       MyApiClient.Initialize(span);
+   });
+   ```
 
-Memory is only readable and writable within the access delegate and is **protected immediately** afterward through reference-counted access control.
+   - Uses AES-256-GCM for authenticated encryption.
+   - Keys are derived via SecureKeyFile.DeriveKey.
+   - Plaintext exists only in protected memory and only during access scope.
+   - Encrypted secrets remain protected even if memory is compromised.
 
 ## Technical Details
 
 | Feature        | Windows                                                                       | POSIX Systems             |
 | -------------- | ----------------------------------------------------------------------------- | ------------------------- |
-| Memory Locking | `VirtualLock` (Non-deterministic\*)                                           | `mlock`                   |
+| Memory Locking | `VirtualLock` (Non-deterministic\*)                                           | `mlock`                   |_
 | Protection     | `VirtualProtect`                                                              | `mprotect`                |
 | Alignment      | Page-aligned                                                                  | Page-aligned              |
 | Zeroing        | `CryptographicOperations`                                                     | `CryptographicOperations` |
@@ -105,6 +131,7 @@ Memory is only readable and writable within the access delegate and is **protect
 > Due to legacy architectural constraints in the Windows NT Kernel,
 > VirtualLock may be silently dropped by the Memory Manager
 > when page protections are transitioned (e.g., to `PAGE_NOACCESS`).
+> This is a [documented limitation](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtuallock#remarks) of the Windows memory API.
 > Windows does not provide a strict guarantee that locked pages remain
 > resident under all conditions, especially when protection states are modified.
 > To guarantee zero-swap integrity on Windows, System PageFile must be disabled.

@@ -1,29 +1,34 @@
 /*
 @author: atailh4n
 SecretManager.cs (c) 2026
-@description: An ISO 27001 compliant secure vault for storing sensitive data in RAM.
-@created:  2026-03-23T16:21:56.122Z
-Modified: !date!
+@description: An ISO 27001 aligned secure vault for storing sensitive data in RAM.
+@created:  2026-03-23
+Modified: 2026-04-29
 */
 
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using SecBuff.Interfaces;
 
 namespace SecBuff;
 
 /// <summary>
-/// An ISO 27001 compliant secure vault for storing sensitive data in RAM.
+/// An ISO 27001 aligned secure vault for storing sensitive data in RAM.
 /// Utilizes OS-level memory locking (mlock/VirtualLock) to prevent swapping to disk 
 /// and memory protection (mprotect/VirtualProtect) for granular access control.
 /// </summary>
 /// <typeparam name="TKey">The type of the key used to identify secrets (e.g., string or enum).</typeparam>
-public sealed partial class SecretManager<TKey>(ILogger<SecretManager<TKey>> logger) : ISecretManager<TKey>
+public sealed partial class SecretManager<TKey>(ILogger<SecretManager<TKey>> logger, SecureKeyFile? keyFile = null) : ISecretManager<TKey>
     where TKey : notnull
 {
-    private readonly Dictionary<TKey, SecureBuffer> _secrets = new();
+    private readonly Dictionary<TKey, SecretEntry> _secrets = new();
     private readonly ReaderWriterLockSlim _rwLock = new(LockRecursionPolicy.NoRecursion);
     private int _disposed;
+    
+    // It will access at Acquire method.
+    // ReSharper disable once NotAccessedPositionalProperty.Global
+    internal record SecretEntry(SecureBuffer Buffer, bool IsEncrypted);
 
     /// <summary>
     /// Adds a new secret to the vault or updates an existing one.
@@ -31,28 +36,76 @@ public sealed partial class SecretManager<TKey>(ILogger<SecretManager<TKey>> log
     /// <param name="key">The unique identifier for the secret.</param>
     /// <param name="value">The raw byte data of the secret to be secured.</param>
     /// <param name="useMprotect">If <see langword="true"/>, enables OS-level page protection (RO/RW/NONE) for this secret.</param>
+    /// <param name="useEncryption">If <see cref="SecureKeyFile"/> is set, uses AES-256-GCM encryption.</param>
     /// <exception cref="ObjectDisposedException">Thrown if the vault has been disposed.</exception>
-    public void SetSecret(TKey key, ReadOnlySpan<byte> value, bool useMprotect = false)
+    public void SetSecret(TKey key, ReadOnlySpan<byte> value, bool useMprotect = false, bool useEncryption = false)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
 
+        if (useEncryption && keyFile is null)
+            throw new InvalidOperationException(
+                "useEncryption is true but no SecureKeyFile was provided to SecretManager.");
+
         _rwLock.EnterWriteLock();
-        LogSecretKeySetRequest(key.ToString() ?? "Unknown");
         try
         {
+            LogSecretGetRequest(key.ToString() ?? "Unknown");
             if (_secrets.TryGetValue(key, out var existing))
+                existing.Buffer.Dispose();
+            
+            SecureBuffer? buffer = null;
+            
+            if (useEncryption && keyFile is not null)
             {
-                existing.Dispose();
+                const int nonceSize = 12;
+                const int tagSize   = 16;
+                var totalSize = nonceSize + tagSize + value.Length;
+                try
+                {
+                    buffer = new SecureBuffer(totalSize, useMprotect);
+                    using var lease = buffer.Acquire(requestWrite: true);
+
+                    var nonce      = lease.Span[..nonceSize];
+                    var tag        = lease.Span[nonceSize..(nonceSize + tagSize)];
+                    var ciphertext = lease.Span[(nonceSize + tagSize)..];
+
+                    RandomNumberGenerator.Fill(nonce);
+
+                    Span<byte> aesKey = stackalloc byte[32];
+                    try
+                    {
+                        keyFile.DeriveKey(aesKey, salt: nonce, info: "SecBuff.AES256GCM"u8);
+                        using var aes = new AesGcm(aesKey, tagSize);
+                        aes.Encrypt(nonce, value, ciphertext, tag);
+                    }
+                    finally
+                    {
+                        CryptographicOperations.ZeroMemory(aesKey);
+                    }
+
+                    _secrets[key] = new SecretEntry(buffer, IsEncrypted: true);
+                    buffer = null; // ownership transferred
+                }
+                finally
+                {
+                    buffer?.Dispose();
+                }
+                return;
             }
-
-            var buffer = new SecureBuffer(value.Length, useMprotect);
-
-            using (var lease = buffer.Acquire(requestWrite: true))
+            
+            try
             {
+                buffer = new SecureBuffer(value.Length, useMprotect);
+                using var lease = buffer.Acquire(requestWrite: true);
                 value.CopyTo(lease.Span);
+                _secrets[key] = new SecretEntry(buffer, IsEncrypted: false);
+                buffer = null; // ownership transferred
+            }
+            finally
+            {
+                buffer?.Dispose();
             }
 
-            _secrets[key] = buffer;
             LogSecretKeySetSucceed(key.ToString() ?? "Unknown");
         }
         finally
@@ -60,7 +113,6 @@ public sealed partial class SecretManager<TKey>(ILogger<SecretManager<TKey>> log
             _rwLock.ExitWriteLock();
         }
     }
-
     /// <summary>
     /// Represents a method that receives a secure <see cref="ReadOnlySpan{T}"/> of bytes.
     /// Required because <see cref="Span{T}"/> types cannot be used as generic arguments in standard Actions.
@@ -74,6 +126,52 @@ public sealed partial class SecretManager<TKey>(ILogger<SecretManager<TKey>> log
     /// <typeparam name="TResult">The type of the result to return.</typeparam>
     /// <param name="span">The secure, memory-locked span.</param>
     public delegate TResult SecretAccessor<out TResult>(ReadOnlySpan<byte> span);
+    
+    [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
+    private void AccessEntryCore(SecretEntry entry, SecretAccessor action)
+    {
+        if (entry.IsEncrypted)
+        {
+            const int nonceSize = 12;
+            const int tagSize   = 16;
+
+            using var cipherLease = entry.Buffer.Acquire(requestWrite: false);
+
+            ReadOnlySpan<byte> nonce      = cipherLease.Span[..nonceSize];
+            ReadOnlySpan<byte> tag        = cipherLease.Span[nonceSize..(nonceSize + tagSize)];
+            ReadOnlySpan<byte> ciphertext = cipherLease.Span[(nonceSize + tagSize)..];
+
+            SecureBuffer? plaintext = null;
+            try
+            {
+                plaintext = new SecureBuffer(ciphertext.Length, entry.Buffer.UsesMprotect);
+                using var plainLease = plaintext.Acquire(requestWrite: true);
+
+                Span<byte> aesKey = stackalloc byte[32];
+                try
+                {
+                    keyFile!.DeriveKey(aesKey, salt: nonce, info: "SecBuff.AES256GCM"u8);
+                    using var aes = new AesGcm(aesKey, tagSize);
+                    aes.Decrypt(nonce, ciphertext, tag, plainLease.Span);
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(aesKey);
+                }
+
+                action(plainLease.Span);
+            }
+            finally
+            {
+                plaintext?.Dispose();
+            }
+        }
+        else
+        {
+            using var lease = entry.Buffer.Acquire(requestWrite: false);
+            action(lease.Span);
+        }
+    }
 
     /// <summary>
     /// Safely accesses a secret by providing a <see cref="ReadOnlySpan{T}"/> to the specified callback.
@@ -86,19 +184,17 @@ public sealed partial class SecretManager<TKey>(ILogger<SecretManager<TKey>> log
     [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
     public void AccessSecret(TKey key, SecretAccessor action)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
-        // TOCTOU information: With DI, almost impossible.
-        // TODO: Fix the TOCTOU here.
         _rwLock.EnterReadLock();
-        LogSecretGetRequest(key.ToString() ?? "Unknown");
         try
         {
-            if (!_secrets.TryGetValue(key, out var buffer))
-                throw new KeyNotFoundException($"{key} kasada bulunamadı.");
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+            LogSecretGetRequest(key.ToString() ?? "Unknown");
 
-            using var lease = buffer.Acquire(requestWrite: false);
+            if (!_secrets.TryGetValue(key, out var entry))
+                throw new KeyNotFoundException($"Key '{key}' was not found.");
+
             ArgumentNullException.ThrowIfNull(action);
-            action(lease.Span);
+            AccessEntryCore(entry, action);
         }
         finally
         {
@@ -116,19 +212,21 @@ public sealed partial class SecretManager<TKey>(ILogger<SecretManager<TKey>> log
     /// <returns>The result returned by the <paramref name="action"/>.</returns>
     /// <exception cref="ObjectDisposedException">Thrown if the <see cref="SecretManager{TKey}"/> already disposed.</exception>
     /// <exception cref="KeyNotFoundException">Thrown if the secret does not exist in the vault.</exception>
+    [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
     public TResult AccessSecret<TResult>(TKey key, SecretAccessor<TResult> action)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
-
         _rwLock.EnterReadLock();
         try
         {
-            if (!_secrets.TryGetValue(key, out var buffer))
-                throw new KeyNotFoundException($"Key '{key}' was not found.");
+            if (!_secrets.TryGetValue(key, out var entry))
+                throw new KeyNotFoundException($"Key '{key.ToString()}' was not found.");
 
-            using var lease = buffer.Acquire(requestWrite: false);
             ArgumentNullException.ThrowIfNull(action);
-            return action(lease.Span);
+
+            TResult? result = default;
+            AccessEntryCore(entry, span => result = action(span));
+            return result!;
         }
         finally
         {
@@ -146,8 +244,8 @@ public sealed partial class SecretManager<TKey>(ILogger<SecretManager<TKey>> log
         _rwLock.EnterWriteLock();
         try
         {
-            if (!_secrets.TryGetValue(key, out var buffer)) return;
-            buffer.Dispose();
+            if (!_secrets.TryGetValue(key, out var entry)) return;
+            entry.Buffer.Dispose();
             _secrets.Remove(key);
         }
         finally
@@ -170,7 +268,7 @@ public sealed partial class SecretManager<TKey>(ILogger<SecretManager<TKey>> log
         _rwLock.EnterReadLock();
         try
         {
-            return _secrets.TryGetValue(key, out var buffer) ? buffer : throw new KeyNotFoundException($"Secret key '{key}' was not found in the vault.");
+            return _secrets.TryGetValue(key, out var entry) ? entry.Buffer : throw new KeyNotFoundException($"Key '{key}' was not found.");
         }
         finally
         {
@@ -190,9 +288,9 @@ public sealed partial class SecretManager<TKey>(ILogger<SecretManager<TKey>> log
         _rwLock.EnterWriteLock();
         try
         {
-            foreach (var buffer in _secrets.Values)
+            foreach (var entry in _secrets.Values)
             {
-                buffer.Dispose();
+                entry.Buffer.Dispose();
             }
 
             _secrets.Clear();

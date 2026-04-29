@@ -1,3 +1,12 @@
+/*
+@author: atailh4n
+PageStates.cs (c) 2026
+@description: Native memory page states table.
+Totally internal.
+@created:  2026-03-23
+Modified: 2026-04-29
+*/
+
 namespace SecBuff;
 
 internal static class PageStates
