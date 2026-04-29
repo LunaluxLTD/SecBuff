@@ -14,7 +14,7 @@
 
         <PackageId>Lunalux.SecBuff</PackageId>
         <Title>Secure Buffer</Title>
-        <Version>1.0.0-preview.1</Version>
+        <Version>1.0.0</Version>
         <Authors>Ata İlhan Köktürk</Authors>
         <Company>LunaluxLTD</Company>
         <Description>GC-safe, OS-level protected secure &amp; hardened memory library for .NET</Description>
