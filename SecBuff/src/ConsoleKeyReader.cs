@@ -1,11 +1,10 @@
 /*
- * Author: atailh4n
- * File: ConsoleKeyReader.cs
- * Copyright (c) 2026
- * Description: Default implementation of IKeyReader using the system console.
- * Created: 2026-03-23
- * Modified: !date!
- */
+@author: atailh4n
+ConsoleKeyReader.cs (c) 2026
+@description: Default implementation of IKeyReader using the system console.
+@created: 2026-03-23
+Modified: 2026-04-29
+*/
 
 using SecBuff.Interfaces;
 

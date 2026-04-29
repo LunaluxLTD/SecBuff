@@ -2,8 +2,8 @@
 @author: atailh4n
 SecureLease.cs (c) 2026
 @description: A stack-only, thread-local lease to safely access the <see cref="SecureBuffer"/> memory.
-@created:  2026-03-23T16:21:56.122Z
-Modified: !date!
+@created:  2026-03-23
+Modified: 2026-04-29
 */
 
 using System.Runtime.CompilerServices;

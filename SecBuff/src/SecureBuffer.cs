@@ -2,8 +2,8 @@
 @author: atailh4n
 SecureBuffer.cs (c) 2026
 @description: Provides a secure, fixed-address memory buffer that is protected from being swapped to disk
-@created:  2026-03-23T16:21:56.122Z
-Modified: !date!
+@created:  2026-03-23
+Modified: 2026-04-29
 */
 
 using System.Diagnostics;
@@ -40,6 +40,11 @@ public sealed unsafe class SecureBuffer : ISecureBuffer
 
     private int _state;
     private const int DisposedFlag = unchecked((int)0x80000000);
+    
+    /// <summary>
+    /// Check for if this instance uses <c>mprotect</c> or <c>VirtualProtect</c>
+    /// </summary>
+    public bool UsesMprotect => _useMprotect;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SecureBuffer"/> class.
@@ -51,6 +56,7 @@ public sealed unsafe class SecureBuffer : ISecureBuffer
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if length is less than or equal to zero.</exception>
     /// <exception cref="InvalidOperationException">Thrown if the OS fails to lock or protect the memory region.</exception>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
     public SecureBuffer(int length, bool useMprotect = false)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
@@ -84,7 +90,6 @@ public sealed unsafe class SecureBuffer : ISecureBuffer
             AlignedFree(_pointer);
             throw;
         }
-
         CryptographicOperations.ZeroMemory(new Span<byte>(_pointer, _length));
     }
 
@@ -365,7 +370,7 @@ public sealed unsafe class SecureBuffer : ISecureBuffer
         if (_useMprotect || IsWindows)
             ProtectMemory((IntPtr)ptr, _allocationSize, IsWindows ? NT_PAGE_READWRITE : (POSIX_PROT_READ | POSIX_PROT_WRITE));
         
-        CryptographicOperations.ZeroMemory(new Span<byte>(ptr, _length));
+        CryptographicOperations.ZeroMemory(new Span<byte>(ptr, (int)_allocationSize));
         
         UnlockMemory((IntPtr)ptr, _allocationSize);
         AlignedFree(ptr);

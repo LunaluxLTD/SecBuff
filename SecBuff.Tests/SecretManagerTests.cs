@@ -7,6 +7,7 @@
  * Modified: !date!
  */
 
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using SecBuff.Interfaces;
@@ -308,4 +309,205 @@ public sealed class SecretManagerTests : IDisposable
         Parallel.For(0, 8, _ => manager.Dispose());
         // No AccessViolationException = double-free guard works
     }
+    
+    // -------------------------------------------------------------------------
+// Encryption (SBKF)
+// -------------------------------------------------------------------------
+
+[Fact]
+public void SetSecret_WithEncryption_AccessReturnsPlaintext()
+{
+    var path = Path.GetTempFileName() + ".sbkf";
+    try
+    {
+        SecureKeyFile.Generate(path);
+        using var keyFile = SecureKeyFile.Load(path);
+        using var manager = new SecretManager<string>(_logger, keyFile);
+
+        var expected = "super-secret"u8.ToArray();
+        manager.SetSecret("key", expected, useEncryption: true);
+
+        byte[]? actual = null;
+        manager.AccessSecret("key", span => actual = span.ToArray());
+
+        Assert.Equal(expected, actual);
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+}
+
+[Fact]
+public void SetSecret_EncryptionWithoutKeyFile_Throws()
+{
+    Assert.Throws<InvalidOperationException>(() =>
+        _manager.SetSecret("key", "data"u8.ToArray(), useEncryption: true));
+}
+
+[Fact]
+public void SetSecret_TwoEncryptedKeys_IndependentlyDecrypt()
+{
+    var path = Path.GetTempFileName() + ".sbkf";
+    try
+    {
+        SecureKeyFile.Generate(path);
+        using var keyFile = SecureKeyFile.Load(path);
+        using var manager = new SecretManager<string>(_logger, keyFile);
+
+        manager.SetSecret("a", "first"u8.ToArray(), useEncryption: true);
+        manager.SetSecret("b", "second"u8.ToArray(), useEncryption: true);
+
+        byte[]? a = null, b = null;
+        manager.AccessSecret("a", span => a = span.ToArray());
+        manager.AccessSecret("b", span => b = span.ToArray());
+
+        Assert.Equal("first"u8.ToArray(), a);
+        Assert.Equal("second"u8.ToArray(), b);
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+}
+
+[Fact]
+public void SetSecret_OverwriteEncrypted_ReturnsNewValue()
+{
+    var path = Path.GetTempFileName() + ".sbkf";
+    try
+    {
+        SecureKeyFile.Generate(path);
+        using var keyFile = SecureKeyFile.Load(path);
+        using var manager = new SecretManager<string>(_logger, keyFile);
+
+        manager.SetSecret("key", "old"u8.ToArray(), useEncryption: true);
+        manager.SetSecret("key", "new"u8.ToArray(), useEncryption: true);
+
+        byte[]? actual = null;
+        manager.AccessSecret("key", span => actual = span.ToArray());
+
+        Assert.Equal("new"u8.ToArray(), actual);
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+}
+
+[Fact]
+public void SetSecret_EncryptedThenUnencrypted_ReturnsPlaintext()
+{
+    var path = Path.GetTempFileName() + ".sbkf";
+    try
+    {
+        SecureKeyFile.Generate(path);
+        using var keyFile = SecureKeyFile.Load(path);
+        using var manager = new SecretManager<string>(_logger, keyFile);
+
+        // Set encrypted first, then overwrite without encryption
+        manager.SetSecret("key", "encrypted"u8.ToArray(), useEncryption: true);
+        manager.SetSecret("key", "plaintext"u8.ToArray(), useEncryption: false);
+
+        byte[]? actual = null;
+        manager.AccessSecret("key", span => actual = span.ToArray());
+
+        Assert.Equal("plaintext"u8.ToArray(), actual);
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+}
+
+// -------------------------------------------------------------------------
+// SBKF file format
+// -------------------------------------------------------------------------
+
+[Fact]
+public void SecureKeyFile_Generate_ThenLoad_Succeeds()
+{
+    var path = Path.GetTempFileName() + ".sbkf";
+    try
+    {
+        SecureKeyFile.Generate(path);
+        using var keyFile = SecureKeyFile.Load(path);
+        Assert.NotNull(keyFile);
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+}
+
+[Fact]
+public void SecureKeyFile_Load_WrongMagic_Throws()
+{
+    var path = Path.GetTempFileName() + ".sbkf";
+    try
+    {
+        var garbage = new byte[37];
+        RandomNumberGenerator.Fill(garbage);
+        File.WriteAllBytes(path, garbage);
+
+        Assert.Throws<InvalidDataException>(() => SecureKeyFile.Load(path));
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+}
+
+[Fact]
+public void SecureKeyFile_Load_WrongSize_Throws()
+{
+    var path = Path.GetTempFileName() + ".sbkf";
+    try
+    {
+        File.WriteAllBytes(path, new byte[10]);
+        Assert.Throws<InvalidDataException>(() => SecureKeyFile.Load(path));
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+}
+
+[Fact]
+public void SecureKeyFile_Load_WrongVersion_Throws()
+{
+    var path = Path.GetTempFileName() + ".sbkf";
+    try
+    {
+        // Correct magic, wrong version, random key
+        Span<byte> file = stackalloc byte[37];
+        "SBKF"u8.CopyTo(file);
+        file[4] = 0xFF; // wrong version
+        RandomNumberGenerator.Fill(file[5..]);
+        File.WriteAllBytes(path, file.ToArray());
+
+        Assert.Throws<NotSupportedException>(() => SecureKeyFile.Load(path));
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+}
+
+[Fact]
+public void SecureKeyFile_Dispose_CalledTwice_DoesNotThrow()
+{
+    var path = Path.GetTempFileName() + ".sbkf";
+    try
+    {
+        SecureKeyFile.Generate(path);
+        var keyFile = SecureKeyFile.Load(path);
+        keyFile.Dispose();
+        keyFile.Dispose();
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+}
 }

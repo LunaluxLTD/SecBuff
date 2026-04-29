@@ -2,11 +2,12 @@
 @author: atailh4n
 SecureConsole.cs (c) 2026
 @description: Provides secure interaction methods for the console, ensuring sensitive input
-@created:  2026-03-23T16:21:56.122Z
-Modified: !date!
+@created:  2026-03-23
+Modified: 2026-04-29
 */
 
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -37,6 +38,7 @@ public sealed class SecureConsole(IKeyReader? keyReader = null) : ISecureConsole
     /// </remarks>
     [SuppressMessage("ReSharper", "RedundantAssignment")]
     [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters")]
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
     public ISecureBuffer ReadSecret(string prompt, int maxLength = 256, bool useMprotect = false)
     {
         Console.Write($"{prompt} (Max {maxLength} chars): ");
@@ -44,6 +46,7 @@ public sealed class SecureConsole(IKeyReader? keyReader = null) : ISecureConsole
         // Use stackalloc to keep temporary data off the managed heap
         Span<byte> staging = stackalloc byte[maxLength];
         Span<byte> encoded = stackalloc byte[4]; // Buffer for UTF-8 character encoding
+        
         var currentLength = 0;
 
         try

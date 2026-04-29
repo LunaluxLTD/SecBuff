@@ -1,7 +1,7 @@
 /*
 @author: atailh4n
 ISecretManager.cs (c) 2026
-@description: An ISO 27001 compliant secure vault for storing sensitive data in RAM.
+@description: An ISO 27001 aligned secure vault for storing sensitive data in RAM.
 Utilizes OS-level memory locking (mlock/VirtualLock) to prevent swapping to disk 
 and memory protection (mprotect/VirtualProtect) for granular access control
 @created:  2026-03-23T16:25:51.396Z
@@ -13,7 +13,7 @@ using System.Runtime.CompilerServices;
 namespace SecBuff.Interfaces;
 
 /// <summary>
-/// An ISO 27001 compliant secure vault for storing sensitive data in RAM.
+/// An ISO 27001 aligned secure vault for storing sensitive data in RAM.
 /// Utilizes OS-level memory locking (mlock/VirtualLock) to prevent swapping to disk 
 /// and memory protection (mprotect/VirtualProtect) for granular access control.
 /// </summary>
@@ -26,9 +26,10 @@ public interface ISecretManager<TKey> : IDisposable where TKey : notnull
     /// <param name="key">The unique identifier for the secret.</param>
     /// <param name="value">The raw byte data of the secret to be secured.</param>
     /// <param name="useMprotect">If <see langword="true"/>, enables OS-level page protection (RO/RW/NONE) for this secret.</param>
+    /// <param name="useEncryption">If <see cref="SecureKeyFile"/> is set, uses AES-256-GCM encryption.</param>
     /// <exception cref="ObjectDisposedException">Thrown if the vault has been disposed.</exception>
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
-    void SetSecret(TKey key, ReadOnlySpan<byte> value, bool useMprotect = false);
+    void SetSecret(TKey key, ReadOnlySpan<byte> value, bool useMprotect = false, bool useEncryption = false);
 
     /// <summary>
     /// Safely accesses a secret by providing a <see cref="ReadOnlySpan{T}"/> to the specified callback.
