@@ -119,7 +119,7 @@ Supports safe usage across `async` / `await` boundaries. Due to .NET runtime con
 
 | Feature        | Windows                                                                       | POSIX Systems             |
 | -------------- | ----------------------------------------------------------------------------- | ------------------------- |
-| Memory Locking | `VirtualLock` (Non-deterministic\*)                                           | `mlock`                   |_
+| Memory Locking | `VirtualLock` (Non-deterministic\*)                                           | `mlock`                   |
 | Protection     | `VirtualProtect`                                                              | `mprotect`                |
 | Alignment      | Page-aligned                                                                  | Page-aligned              |
 | Zeroing        | `CryptographicOperations`                                                     | `CryptographicOperations` |
@@ -160,3 +160,7 @@ Contributions are welcome. For security-related issues, please use a responsible
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
+
+## Acknowledgements
+
+Special thanks to [@Cinofi](https://github.com/Cinofi) for early-stage testing and validation on Windows environments, helping identify platform-specific edge cases and stability issues.
